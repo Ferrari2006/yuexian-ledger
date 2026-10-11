@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from yuexian.pipeline import run_shipment
+from yuexian.pipeline import run_dataset, run_shipment
 from yuexian.rules import (
     field_timeline,
     load_dataset,
@@ -39,11 +39,18 @@ ACTION_LABELS = {
 def main() -> None:
     dataset = load_dataset()
     payload = score(dataset)
+    flows = run_dataset(dataset)
+    payload["shipments"] = [item["judgement"] for item in flows]
+    threshold = dataset["threshold_gross_weight"]
     states = {
-        shipment["id"]: _resolution_states(shipment, dataset["threshold_gross_weight"])
+        shipment["id"]: _resolution_states(shipment, threshold)
         for shipment in dataset["shipments"]
     }
-    html = _page(payload, states)
+    page_flows = {
+        item["id"]: {key: item[key] for key in ("documents", "trace", "explanation")}
+        for item in flows
+    }
+    html = _page(payload, page_flows, states)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html, encoding="utf-8")
     print(OUT)
@@ -64,6 +71,7 @@ def _resolution_states(shipment: dict, threshold: float) -> dict[str, dict]:
         states[key] = {
             "judgement": judged,
             "documents": flow["documents"],
+            "trace": flow["trace"],
             "explanation": flow["explanation"],
             "choices": choices,
             "applied": [ACTION_LABELS[token] for token in sorted(tokens)],
@@ -79,8 +87,9 @@ def _resolution_states(shipment: dict, threshold: float) -> dict[str, dict]:
     return states
 
 
-def _page(payload: dict, states: dict[str, dict]) -> str:
+def _page(payload: dict, flows: dict, states: dict[str, dict]) -> str:
     data = json.dumps(payload, ensure_ascii=False)
+    flow_data = json.dumps(flows, ensure_ascii=False)
     state_data = json.dumps(states, ensure_ascii=False)
     stations = json.dumps(STATION, ensure_ascii=False)
     return f"""<!DOCTYPE html>
@@ -99,10 +108,12 @@ def _page(payload: dict, states: dict[str, dict]) -> str:
   ul {{ list-style: none; padding: 0; margin: 0; }}
   li {{ background: #fff; border: 1px solid #d9d3cb; padding: 12px; margin-bottom: 8px; cursor: pointer; }}
   li.hold {{ border-color: #b42318; }}
+  li.review {{ border-color: #a15c00; }}
   li.active {{ box-shadow: inset 4px 0 #1b3a4b; }}
   .panel {{ background: #fff; border: 1px solid #d9d3cb; padding: 20px; min-height: 420px; }}
   .banner {{ background: #b42318; color: #fff; padding: 14px 16px; font-size: 28px; font-weight: 700; }}
   .banner.ok {{ background: #1f6b4a; }}
+  .banner.review {{ background: #a15c00; }}
   .docs {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }}
   .paper {{ border: 1px solid #1b3a4b; background: #fffdf8; padding: 14px 16px; font-family: "SimSun", "Microsoft YaHei", serif; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }}
   .paper h3 {{ margin: 0 0 8px; font-size: 16px; text-align: center; }}
@@ -134,6 +145,7 @@ def _page(payload: dict, states: dict[str, dict]) -> str:
 <footer id="foot"></footer>
 <script>
 const DATA = {data};
+const FLOWS = {flow_data};
 const STATES = {state_data};
 const STATION = {stations};
 const list = document.getElementById("list");
@@ -156,7 +168,7 @@ function timeline(points) {{
     <div class="point ${{point.changed ? "changed" : ""}}">
       <strong>${{point.label}}</strong>
       <span>${{point.value === null ? "未记录" : point.value}}</span>
-      ${{point.changed ? "<span>首次改写</span>" : ""}}
+      ${{point.changed ? "<span>首次可观察差异</span>" : ""}}
     </div>`).join("")}}</div>`;
 }}
 
@@ -166,7 +178,7 @@ function evidence(state, judged) {{
   const device = judged.blocks.find(block => block.kind === "container_no" || block.kind === "seal_no");
   const countries = judged.blocks.find(block => block.kind === "countries");
   if (weight) {{
-    html += `<div class="evidence"><strong>毛重版本轨迹</strong>${{timeline(state.timelines.gross_weight)}}<p>红框表示相对上一站的第一次改写。当前装箱单与提单相差 ${{Math.round(weight.gap * 1000) / 10}}%。</p></div>`;
+    html += `<div class="evidence"><strong>毛重版本轨迹</strong>${{timeline(state.timelines.gross_weight)}}<p>红框表示相对上一站的首次可观察差异。当前装箱单与提单相差 ${{Math.round(weight.gap * 1000) / 10}}%。</p></div>`;
   }}
   if (device) {{
     html += `<div class="evidence"><strong>${{device.title}}版本轨迹</strong>${{timeline(state.timelines[device.kind])}}<p>${{device.if_send}}。</p></div>`;
@@ -186,19 +198,28 @@ function render(item, key = "") {{
   const weight = judged.blocks.find(block => block.kind === "gross_weight");
   const packingHit = weight ? String(weight.packing_kg) : "";
   const blHit = weight ? String(weight.bl_kg) : "";
-  const banner = judged.verdict === "hold" ? "先别申报" : "可以申报";
-  let body = `<div class="banner ${{judged.verdict === "hold" ? "" : "ok"}}">${{banner}}</div>`;
+  const bannerClass = judged.verdict === "send" ? "ok" : (judged.verdict === "review" ? "review" : "");
+  const steps = (state.trace || []).map(step => step.stage).join(" → ");
+  let body = `<div class="banner ${{bannerClass}}">${{judged.headline}}</div>`;
   body += `<p>${{item.id}} · ${{item.title}}</p>`;
+  body += `<p class="sub">数据流：${{steps}}</p>`;
   body += `<div class="docs">${{paper("装箱单", state.documents.packing, packingHit)}}${{paper("提单", state.documents.bl, blHit)}}</div>`;
+  const extras = ["booking", "manifest", "declaration"].filter(name => state.documents[name]);
+  if (extras.length) {{
+    body += `<details><summary>查看历史与舱单依据</summary>${{extras.map(name => paper(STATION[name], state.documents[name], "")).join("")}}</details>`;
+  }}
   body += evidence(state, judged);
   if (state.applied.length) {{
     body += `<div class="resolved"><strong>已完成的整改：</strong>${{state.applied.join("；")}}。系统已按整改后的副本重新判定。</div>`;
   }}
   body += `<p>${{state.explanation}}</p>`;
-  if (judged.verdict === "hold") {{
+  for (const issue of judged.pending || []) {{
+    body += `<p>待核验：${{issue.message}}</p>`;
+  }}
+  if (judged.verdict === "hold" && state.choices.length) {{
     body += `<h2>确认依据并复检</h2><p>选择一份单据作为本次整改依据。原始样例不会被改写。</p>`;
     body += state.choices.map(choice => `<button class="choice" data-token="${{choice.token}}">${{choice.label}}</button>`).join("");
-  }} else {{
+  }} else if (judged.verdict === "send") {{
     body += `<div class="resolved"><strong>复检通过。</strong>当前三单的已覆盖字段不再触发阻塞规则，可以进入申报准备。</div>`;
   }}
   panel.innerHTML = body;
@@ -214,7 +235,7 @@ function render(item, key = "") {{
 
 DATA.shipments.forEach(item => {{
   const li = document.createElement("li");
-  li.className = item.verdict === "hold" ? "hold" : "";
+  li.className = item.verdict === "send" ? "" : item.verdict;
   li.dataset.id = item.id;
   li.textContent = `${{item.headline}} · ${{item.id}}`;
   li.onclick = () => render(item);

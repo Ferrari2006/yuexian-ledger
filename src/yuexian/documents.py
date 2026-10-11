@@ -16,10 +16,17 @@ def render_shipment(shipment: dict) -> dict[str, str]:
     manifest = _manifest(shipment)
     if manifest:
         docs["manifest"] = manifest
+    # 定位改写必须有真实提供的历史观测，不能从两张单证猜出生站。
+    for station, doc_type in (("booking", "BOOKING"), ("declaration", "DECLARATION")):
+        if any(value_at(shipment.get(field, []), station) is not None
+               for field in ("gross_weight_kg", "container_no", "seal_no")):
+            docs[station] = _doc(shipment, station, doc_type)
     return docs
 
 
 TITLES = {
+    "BOOKING": "订舱记录 BOOKING",
+    "DECLARATION": "报关记录 DECLARATION",
     "PACKING_LIST": "装箱单 PACKING LIST",
     "BILL_OF_LADING": "提单 BILL OF LADING",
     "MANIFEST": "舱单 MANIFEST",
@@ -28,8 +35,8 @@ TITLES = {
 
 def _doc(shipment: dict, station: str, doc_type: str) -> str:
     weight = value_at(shipment.get("gross_weight_kg", []), station)
-    container = value_at(shipment.get("container_no", []), "bl")
-    seal = value_at(shipment.get("seal_no", []), station if station != "packing" else "bl")
+    container = value_at(shipment.get("container_no", []), station)
+    seal = value_at(shipment.get("seal_no", []), station)
     lines = [
         TITLES[doc_type],
         "合成样例，非正式海关单证。",
@@ -51,24 +58,10 @@ def _doc(shipment: dict, station: str, doc_type: str) -> str:
 
 
 def _manifest(shipment: dict) -> str | None:
-    seal = value_at(shipment.get("seal_no", []), "manifest")
-    bl_seal = value_at(shipment.get("seal_no", []), "bl")
-    container = value_at(shipment.get("container_no", []), "manifest")
-    if seal is None and container is None:
+    if not any(value_at(shipment.get(field, []), "manifest") is not None
+               for field in ("gross_weight_kg", "container_no", "seal_no")):
         return None
-    if seal == bl_seal and container == value_at(shipment.get("container_no", []), "bl"):
-        return None
-    lines = [
-        TITLES["MANIFEST"],
-        "合成样例，非正式海关单证。",
-        "单证站点：manifest",
-        f"票号：{shipment['id']}",
-    ]
-    if container:
-        lines.append(f"柜号：{container}")
-    if seal:
-        lines.append(f"封条号：{seal}")
-    return "\n".join(lines) + "\n"
+    return _doc(shipment, "manifest", "MANIFEST")
 
 
 def _ocr_noise(observations: list[dict], station: str):
@@ -92,6 +85,8 @@ def _country_lines(shipment: dict) -> list[str]:
             f"国家：{collapsed}",
             f"贸易国：{countries.get('trade', '')}",
             f"原产国：{countries.get('origin', '')}",
+            f"启运国：{countries.get('departure', '')}",
+            f"最终目的国：{countries.get('destination', '')}",
         ]
     return [
         f"贸易国：{countries.get('trade', '')}",

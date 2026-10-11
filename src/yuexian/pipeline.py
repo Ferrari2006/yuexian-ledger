@@ -25,16 +25,29 @@ def run_shipment(shipment: dict, threshold: float, use_qwen: bool = False) -> di
     )
     extracted = []
     qwen_note = None
+    qwen_status = "disabled" if not use_qwen else "no_document"
     for name, text in documents.items():
         parsed = extract_document(text)
         extracted.append(parsed)
         if use_qwen and name == "bl":
             qwen_note = extract_with_qwen(text)
+            if qwen_note is None:
+                qwen_status = "not_configured"
+            elif (
+                isinstance(qwen_note, dict)
+                and "error" not in qwen_note
+                and isinstance(qwen_note.get("raw"), str)
+                and qwen_note["raw"].strip()
+            ):
+                qwen_status = "response_received"
+            else:
+                qwen_status = "failed"
     trace.append(
         {
             "stage": "extract",
             "stations": [item["station"] for item in extracted],
             "qwen": qwen_note["source"] if isinstance(qwen_note, dict) and "source" in qwen_note else "off",
+            "qwen_status": qwen_status,
         }
     )
     structured = _structure(shipment, extracted)
@@ -83,18 +96,18 @@ def _structure(shipment: dict, extracted: list[dict]) -> dict:
             merged[field].extend(item["observations"][field])
         for key, value in item["countries"].items():
             merged["countries"][key] = value
-    for key in ("trade", "departure", "origin", "destination"):
-        merged["countries"].setdefault(key, (shipment.get("countries") or {}).get(key))
     return merged
 
 
 def _explain(judged: dict) -> dict:
     lines = [judged["headline"]]
-    if not judged["blocks"]:
+    if judged["verdict"] == "send":
         lines.append("装箱毛重与提单一致，柜号和封条只有一版，四国口径分栏。")
     for block in judged["blocks"]:
         lines.append(block["if_send"])
         lines.append(block["action"])
+    for issue in judged.get("pending", []):
+        lines.append(issue["message"])
     if judged["ocr_ignored"]:
         lines.append(f"已忽略 {judged['ocr_ignored']} 处抽取误差，不计入改写。")
     lines.append("以上句子只复述规则结果。")

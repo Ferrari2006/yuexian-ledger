@@ -47,6 +47,13 @@ class SubmissionTests(unittest.TestCase):
         self.assertNotIn("http://", html, "demo 不应依赖外链")
         self.assertNotIn("https://", html, "demo 不应依赖外链")
 
+    def test_demo_shipments_match_pipeline_results(self):
+        from yuexian.pipeline import run_dataset
+        from yuexian.rules import load_dataset
+
+        self.assertEqual(self._demo_data()["shipments"],
+                         [flow["judgement"] for flow in run_dataset(load_dataset())])
+
     def test_hero_shipment_is_the_hold_case(self):
         data = self._demo_data()
         hero = next((s for s in data["shipments"] if s.get("demo")), None)
@@ -57,11 +64,14 @@ class SubmissionTests(unittest.TestCase):
     def test_verify_submission_script_passes(self):
         import subprocess
         import sys
+        import os
 
         result = subprocess.run(
             [sys.executable, str(ROOT / "tools" / "verify_submission.py")],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
