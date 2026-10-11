@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from yuexian.weights import parse_weight
+
 STATION_ORDER = ["booking", "packing", "bl", "manifest", "declaration"]
 BIRTH_TARGETS = {"packing", "manifest"}
 
@@ -21,11 +23,8 @@ def _rewrites(observations: list[dict]) -> list[dict]:
 
 def birth_station(observations: list[dict]) -> str | None:
     """第一次相对上一站发生变化的站点。抽取误差不参与。"""
-    chosen = []
-    for station in STATION_ORDER:
-        hits = [item for item in _rewrites(observations) if item["station"] == station]
-        if hits:
-            chosen.append(hits[-1])
+    latest = {item["station"]: item for item in _rewrites(observations)}
+    chosen = [latest[station] for station in STATION_ORDER if station in latest]
     previous = None
     for item in chosen:
         if previous is not None and item["value"] != previous:
@@ -42,7 +41,8 @@ def value_at(observations: list[dict], station: str):
 
 
 def weight_gap(packing, bl) -> float | None:
-    if packing is None or bl in (None, 0):
+    packing, bl = parse_weight(packing), parse_weight(bl)
+    if packing is None or bl is None or packing <= 0 or bl <= 0:
         return None
     return abs(packing - bl) / abs(bl)
 
@@ -56,11 +56,20 @@ def country_mixed(countries: dict) -> bool:
 
 def judge_shipment(shipment: dict, threshold: float) -> dict:
     blocks = []
+    pending = []
     weight_obs = shipment.get("gross_weight_kg", [])
-    packing = value_at(weight_obs, "packing")
-    bl = value_at(weight_obs, "bl")
+    packing = parse_weight(value_at(weight_obs, "packing"))
+    bl = parse_weight(value_at(weight_obs, "bl"))
+    for station, value, title in (("packing", packing, "装箱单"), ("bl", bl, "提单")):
+        if value is None or value <= 0:
+            pending.append({"field": "gross_weight_kg", "station": station,
+                            "message": f"{title}毛重缺失或不是有效的正数公斤值，请核验原文"})
     gap = weight_gap(packing, bl)
-    weight_birth = birth_station(weight_obs)
+    normalized_weight_obs = [
+        {**item, "value": parse_weight(item.get("value"))}
+        for item in weight_obs
+    ]
+    weight_birth = birth_station(normalized_weight_obs)
     if gap is not None and gap > threshold:
         blocks.append(
             {
@@ -78,7 +87,13 @@ def judge_shipment(shipment: dict, threshold: float) -> dict:
         obs = shipment.get(field, [])
         left = value_at(obs, "bl")
         right = value_at(obs, "manifest")
-        if left is not None and right is not None and left != right:
+        left_ok = isinstance(left, str) and bool(left.strip())
+        right_ok = isinstance(right, str) and bool(right.strip())
+        for station, ok, doc_title in (("bl", left_ok, "提单"), ("manifest", right_ok, "舱单")):
+            if not ok:
+                pending.append({"field": field, "station": station,
+                                "message": f"{doc_title}{title}缺失或无效，请核验原文"})
+        if left_ok and right_ok and left != right:
             blocks.append(
                 {
                     "kind": field,
@@ -103,14 +118,24 @@ def judge_shipment(shipment: dict, threshold: float) -> dict:
             }
         )
 
+    countries = shipment.get("countries", {})
+    for field, title in (("trade", "贸易国"), ("departure", "启运国"),
+                         ("origin", "原产国"), ("destination", "最终目的国")):
+        value = countries.get(field)
+        if not isinstance(value, str) or not value.strip():
+            pending.append({"field": field, "station": "countries",
+                            "message": f"{title}缺失或无效，请分别核验国家字段"})
+
     hold = len(blocks) > 0
+    verdict = "hold" if hold else ("review" if pending else "send")
     return {
         "id": shipment["id"],
         "title": shipment.get("title", ""),
         "demo": bool(shipment.get("demo")),
-        "verdict": "hold" if hold else "send",
-        "headline": "先别申报" if hold else "可以申报",
+        "verdict": verdict,
+        "headline": {"hold": "先别申报", "review": "资料待核验", "send": "可以申报"}[verdict],
         "blocks": blocks,
+        "pending": pending,
         "ocr_ignored": sum(1 for item in weight_obs if item.get("label") == "ocr_error"),
     }
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 import re
 
+from yuexian.weights import parse_weight
+
 FIELD_LINE = re.compile(r"^(扫描)?([^：:]+)[：:]\s*(.+)$")
 
 WEIGHT_KEYS = {
@@ -88,7 +90,7 @@ def extract_document(text: str) -> dict:
 
 
 def extract_with_qwen(text: str) -> dict | None:
-    """有密钥时调用千问抽出 JSON。失败或未配置则返回 None，由栏位抽取接手。"""
+    """有密钥时请求千问 JSON；未配置返回 None，失败返回错误标记。"""
     api_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
     if not api_key:
         return None
@@ -125,9 +127,6 @@ def extract_with_qwen(text: str) -> dict | None:
 
 
 def _number(value: str):
-    try:
-        if "." in value:
-            return float(value)
-        return int(value)
-    except ValueError:
-        return value
+    number = parse_weight(value)
+    # 保留无法解析的原文，规则层据此要求核验，而不是默默丢弃。
+    return value if number is None else number

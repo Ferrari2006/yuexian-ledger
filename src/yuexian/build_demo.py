@@ -22,6 +22,7 @@ def main() -> None:
     dataset = load_dataset()
     payload = score(dataset)
     flows = run_dataset(dataset)
+    payload["shipments"] = [item["judgement"] for item in flows]
     html = _page(payload, flows)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html, encoding="utf-8")
@@ -57,9 +58,11 @@ def _page(payload: dict, flows: list[dict]) -> str:
   ul {{ list-style: none; padding: 0; margin: 0; }}
   li {{ background: #fff; border: 1px solid #d9d3cb; padding: 12px; margin-bottom: 8px; cursor: pointer; }}
   li.hold {{ border-color: #b42318; }}
+  li.review {{ border-color: #a15c00; }}
   .panel {{ background: #fff; border: 1px solid #d9d3cb; padding: 20px; min-height: 420px; }}
   .banner {{ background: #b42318; color: #fff; padding: 14px 16px; font-size: 28px; font-weight: 700; }}
   .banner.ok {{ background: #1f6b4a; }}
+  .banner.review {{ background: #a15c00; }}
   .docs {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }}
   .paper {{ border: 1px solid #1b3a4b; background: #fffdf8; padding: 14px 16px; font-family: "SimSun", "Microsoft YaHei", serif; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }}
   .paper h3 {{ margin: 0 0 8px; font-size: 16px; text-align: center; }}
@@ -114,11 +117,14 @@ function show(item) {{
   const weight = item.blocks.find(b => b.kind === "gross_weight");
   const country = item.blocks.find(b => b.kind === "countries");
   const seal = item.blocks.find(b => b.kind === "seal_no" || b.kind === "container_no");
-  const banner = item.verdict === "hold" ? "先别申报" : "可以申报";
-  let body = `<div class="banner ${{item.verdict === "hold" ? "" : "ok"}}">${{banner}}</div>`;
+  const banner = item.headline;
+  const bannerClass = item.verdict === "send" ? "ok" : (item.verdict === "review" ? "review" : "");
+  let body = `<div class="banner ${{bannerClass}}">${{banner}}</div>`;
   body += `<p>${{item.id}} · ${{item.title}}</p>`;
   body += `<p class="sub">数据流：${{steps}}</p>`;
   body += `<div class="docs">${{paper("装箱单", flow.documents.packing, packingHit)}}${{paper("提单", flow.documents.bl, blHit)}}</div>`;
+  const evidence = ["booking", "manifest", "declaration"].filter(name => flow.documents[name]);
+  if (evidence.length) body += `<details><summary>查看历史与舱单依据</summary>${{evidence.map(name => paper(STATION[name], flow.documents[name], "")).join("")}}</details>`;
   if (flow.explanation) body += `<p>${{flow.explanation}}</p>`;
   if (weight) {{
     const pct = Math.round(weight.gap * 1000) / 10;
@@ -128,17 +134,20 @@ function show(item) {{
       <div class="doc"><div>提单</div><strong>${{weight.bl_kg}} kg</strong></div>
     </div>`;
     body += `<p>相差 ${{pct}}%。${{weight.if_send}}。</p>`;
-    body += `<p>依据：这个数是在${{where}}改过的，不是模型看漏。</p>`;
+    body += `<p>依据：已提供记录中，首次可观察差异出现在${{where}}。抽取误差不计入这条记录。</p>`;
     body += `<button type="button" id="send">${{weight.action}}</button>`;
     body += `<p class="note" id="sendNote" hidden>若现在发送：${{weight.if_send}}。海关接受申报之后不能随意改单。</p>`;
   }} else if (seal) {{
     body += `<p>${{seal.if_send}}。提单 ${{seal.bl}}，舱单 ${{seal.manifest}}。</p>`;
     body += `<p>${{seal.action}}</p>`;
-  }} else if (!item.blocks.length) {{
+  }} else if (item.verdict === "send") {{
     body += `<p>装箱毛重与提单一致，柜号和封条只有一版，四国口径没有被写成一格。</p>`;
   }}
   if (country) {{
     body += `<p>第二条：${{country.if_send}}。</p><p>${{country.action}}。</p>`;
+  }}
+  for (const issue of item.pending || []) {{
+    body += `<p>待核验：${{issue.message}}</p>`;
   }}
   panel.innerHTML = body;
   const btn = document.getElementById("send");
@@ -146,7 +155,7 @@ function show(item) {{
 }}
 DATA.shipments.forEach(item => {{
   const li = document.createElement("li");
-  li.className = item.verdict === "hold" ? "hold" : "";
+  li.className = item.verdict === "send" ? "" : item.verdict;
   li.textContent = `${{item.headline}} · ${{item.id}}`;
   li.onclick = () => show(item);
   list.appendChild(li);
