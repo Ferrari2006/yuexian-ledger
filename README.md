@@ -11,13 +11,14 @@
 交稿说明可直接粘贴 `docs/作品说明-DataClawHub.md`。三分钟讲稿在 `docs/路演稿.md`。导出合成单证：`python -m yuexian docs`。
 
 ```powershell
+python -m pip install -e .
 python -m unittest discover -s tests -t . -v
 python -m yuexian.build_demo
 ```
 
-`-t .` 让`tests` 作为包导入，其中的路径引导会把 `src/` 加入 `sys.path`，
-所以在刚克隆下来的机器上无需先 `pip install -e .`。若已安装本包，
-也可以用 `pip install -e ".[dev]"` 后直接 `pytest`。
+`-t .` 让`tests` 作为包导入，其中的路径引导会把 `src/` 加入 `sys.path`；
+但重建演示页或导出单证需要先安装本包。若需要 `pytest`，可改用
+`pip install -e ".[dev]"`。
 
 ## 最终版范围
 

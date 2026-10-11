@@ -1,6 +1,16 @@
 import unittest
 
-from yuexian.rules import birth_station, country_mixed, judge_shipment, load_dataset, score
+from yuexian.rules import (
+    birth_station,
+    country_mixed,
+    field_timeline,
+    judge_shipment,
+    load_dataset,
+    resolve_shipment,
+    resolution_options,
+    score,
+)
+from yuexian.build_demo import _resolution_states
 
 
 class RuleTests(unittest.TestCase):
@@ -46,6 +56,40 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(result["birth_station_total"], 3)
         self.assertEqual(result["country_mix_count"], 2)
         self.assertEqual(result["weight_hold_count"], 2)
+
+    def test_timeline_marks_the_first_weight_change(self):
+        timeline = field_timeline(self.by_id["SH-2026-014"], "gross_weight_kg")
+        packing = next(point for point in timeline if point["station"] == "packing")
+        self.assertEqual(packing["value"], 12480)
+        self.assertTrue(packing["changed"])
+
+    def test_resolution_keeps_the_original_and_rechecks(self):
+        original = self.by_id["SH-2026-014"]
+        fixed_weight = resolve_shipment(original, "gross_weight:packing")
+        self.assertEqual(original["gross_weight_kg"][2]["value"], 12000)
+        still_blocked = judge_shipment(fixed_weight, 0.03)
+        self.assertEqual({block["kind"] for block in still_blocked["blocks"]}, {"countries"})
+
+        ready = resolve_shipment(fixed_weight, "countries:split")
+        self.assertEqual(judge_shipment(ready, 0.03)["headline"], "可以申报")
+
+    def test_seal_resolution_offers_and_applies_both_sources(self):
+        shipment = self.by_id["SH-2026-021"]
+        judged = judge_shipment(shipment, 0.03)
+        self.assertEqual(
+            {item["token"] for item in resolution_options(judged)},
+            {"seal_no:bl", "seal_no:manifest"},
+        )
+        fixed = resolve_shipment(shipment, "seal_no:bl")
+        self.assertEqual(judge_shipment(fixed, 0.03)["headline"], "可以申报")
+
+    def test_demo_precomputes_a_full_remediation_path(self):
+        states = _resolution_states(self.by_id["SH-2026-014"], 0.03)
+        self.assertEqual(states[""]["judgement"]["headline"], "先别申报")
+        self.assertEqual(
+            states["countries:split|gross_weight:packing"]["judgement"]["headline"],
+            "可以申报",
+        )
 
 
 if __name__ == "__main__":

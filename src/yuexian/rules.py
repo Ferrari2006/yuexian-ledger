@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -9,6 +10,13 @@ from yuexian.weights import parse_weight
 
 STATION_ORDER = ["booking", "packing", "bl", "manifest", "declaration"]
 BIRTH_TARGETS = {"packing", "manifest"}
+STATION_LABELS = {
+    "booking": "订舱",
+    "packing": "装箱单",
+    "bl": "提单",
+    "manifest": "舱单",
+    "declaration": "报关草稿",
+}
 
 
 def load_dataset(path: Path | None = None) -> dict:
@@ -52,6 +60,91 @@ def country_mixed(countries: dict) -> bool:
     if not collapsed:
         return False
     return collapsed == countries.get("origin") and countries.get("trade") != countries.get("origin")
+
+
+def field_timeline(shipment: dict, field: str) -> list[dict]:
+    """按业务站点给出字段的可视化证据链，不把 OCR 误差当作业务改写。"""
+    observations = shipment.get(field, [])
+    previous = None
+    points = []
+    for station in STATION_ORDER:
+        value = value_at(observations, station)
+        changed = value is not None and previous is not None and value != previous
+        points.append(
+            {
+                "station": station,
+                "label": STATION_LABELS[station],
+                "value": value,
+                "changed": changed,
+            }
+        )
+        if value is not None:
+            previous = value
+    return points
+
+
+def resolution_options(judged: dict) -> list[dict]:
+    """给当前未解决的阻塞项列出可选的人工确认动作。"""
+    options = []
+    for block in judged["blocks"]:
+        kind = block["kind"]
+        if kind == "gross_weight":
+            options.extend(
+                [
+                    {"token": "gross_weight:packing", "label": "以装箱单毛重为准"},
+                    {"token": "gross_weight:bl", "label": "以提单毛重为准"},
+                ]
+            )
+        elif kind in {"container_no", "seal_no"}:
+            title = block["title"]
+            options.extend(
+                [
+                    {"token": f"{kind}:bl", "label": f"以提单{title}为准"},
+                    {"token": f"{kind}:manifest", "label": f"以舱单{title}为准"},
+                ]
+            )
+        elif kind == "countries":
+            options.append({"token": "countries:split", "label": "拆分贸易国、启运国、原产国和目的国"})
+    return options
+
+
+def resolve_shipment(shipment: dict, token: str) -> dict:
+    """返回一份整改后的副本，原始样例和其业务轨迹保持不变。"""
+    try:
+        kind, source = token.split(":", 1)
+    except ValueError as exc:
+        raise ValueError(f"无效整改动作：{token}") from exc
+
+    resolved = deepcopy(shipment)
+    if kind == "countries" and source == "split":
+        resolved.setdefault("countries", {}).pop("collapsed_value", None)
+        return resolved
+
+    fields = {
+        "gross_weight": ("gross_weight_kg", ("packing", "bl", "manifest", "declaration")),
+        "container_no": ("container_no", ("bl", "manifest")),
+        "seal_no": ("seal_no", ("bl", "manifest")),
+    }
+    if kind not in fields:
+        raise ValueError(f"不支持的整改字段：{kind}")
+    field, stations = fields[kind]
+    if source not in stations:
+        raise ValueError(f"{kind} 不能以 {source} 为准")
+    authoritative = value_at(resolved.get(field, []), source)
+    if authoritative is None:
+        raise ValueError(f"{source} 没有可用的 {kind} 值")
+    for station in stations:
+        if station != source:
+            _set_rewrite_value(resolved[field], station, authoritative)
+    return resolved
+
+
+def _set_rewrite_value(observations: list[dict], station: str, value) -> None:
+    for item in reversed(observations):
+        if item.get("station") == station and item.get("label") == "rewrite":
+            item["value"] = value
+            return
+    observations.append({"station": station, "value": value, "label": "rewrite"})
 
 
 def judge_shipment(shipment: dict, threshold: float) -> dict:

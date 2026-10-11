@@ -11,6 +11,7 @@
 浏览器打开仓库里的 `demo/index.html`。列表里红色的一票是主演示。也可克隆后运行：
 
 ```
+python -m pip install -e .
 python -m unittest discover -s tests -t . -v
 python -m yuexian.build_demo
 ```
