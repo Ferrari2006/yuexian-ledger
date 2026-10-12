@@ -25,7 +25,10 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(ran["judgement"]["headline"], gold["headline"], shipment["id"])
             self.assertEqual(ran["judgement"], gold, shipment["id"])
             stages = [step["stage"] for step in ran["trace"]]
-            self.assertEqual(stages, ["ingest", "extract", "structure", "decide", "explain"])
+            self.assertEqual(
+                stages,
+                ["ingest", "dispatch", "preprocess", "extract", "structure", "decide", "explain"],
+            )
 
     def test_hero_explanation_keeps_hold(self):
         hero = next(item for item in self.dataset["shipments"] if item["demo"])
@@ -56,7 +59,8 @@ class PipelineTests(unittest.TestCase):
     def test_qwen_status_reports_outcome_without_changing_decision(self):
         shipment = self.dataset["shipments"][0]
         baseline = run_shipment(shipment, 0.03)
-        self.assertEqual(baseline["trace"][1]["qwen_status"], "disabled")
+        extract_step = next(step for step in baseline["trace"] if step["stage"] == "extract")
+        self.assertEqual(extract_step["qwen_status"], "disabled")
         outcomes = [
             (None, "not_configured"),
             ({"source": "qwen", "error": "network error"}, "failed"),
@@ -68,7 +72,8 @@ class PipelineTests(unittest.TestCase):
                 with patch("yuexian.pipeline.extract_with_qwen", return_value=response) as call:
                     result = run_shipment(shipment, 0.03, use_qwen=True)
                 call.assert_called_once()
-                self.assertEqual(result["trace"][1]["qwen_status"], status)
+                extract_step = next(step for step in result["trace"] if step["stage"] == "extract")
+                self.assertEqual(extract_step["qwen_status"], status)
                 self.assertEqual(result["judgement"], baseline["judgement"])
                 self.assertEqual(result["explanation"], baseline["explanation"])
 
