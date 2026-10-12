@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 from pathlib import Path
 
@@ -19,7 +20,7 @@ def main() -> None:
         return
     if args.command == "batch":
         copies = max(1, args.repeat)
-        items = [item for item in dataset["shipments"] for _ in range(copies)]
+        items = [copy.deepcopy(item) for item in dataset["shipments"] for _ in range(copies)]
         ran = run_batch(items, dataset["threshold_gross_weight"], workers=args.workers)
         counts = {"hold": 0, "review": 0, "send": 0}
         for item in ran:
