@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -52,14 +53,7 @@ def run_shipment(shipment: dict, threshold: float, use_qwen: bool = False) -> di
     qwen_status = "disabled" if not use_qwen else "no_document"
     for name, text in prepared:
         if not text.strip():
-            extracted.append(
-                {
-                    "shipment_id": shipment["id"],
-                    "station": name,
-                    "observations": {"gross_weight_kg": [], "container_no": [], "seal_no": []},
-                    "countries": {},
-                }
-            )
+            extracted.append(_blank_parse(shipment["id"], name))
             continue
         parsed = extract_document(text)
         extracted.append(parsed)
@@ -97,6 +91,7 @@ def run_shipment(shipment: dict, threshold: float, use_qwen: bool = False) -> di
     judged = judge_shipment(structured, threshold)
     trace.append({"stage": "decide", "verdict": judged["verdict"], "blocks": len(judged["blocks"])})
     explanation = _explain(judged)
+    explanation["text"] += " " + _intake_note("text/form", dropped, fallbacks)
     if explanation["verdict"] != judged["verdict"]:
         raise RuntimeError("解释改写了规则判定")
     trace.append({"stage": "explain", "verdict": explanation["verdict"]})
@@ -120,7 +115,7 @@ def run_input(item, threshold: float, use_qwen: bool = False) -> dict:
     try:
         route = rule_for(item)
         if route["handler"] == "review_fallback":
-            kind = item.get("input_type") or item.get("file_type") or route["type"] if isinstance(item, dict) else route["type"]
+            kind = _kind_label(item, route)
             return _fallback_result(item, FALLBACK["unsupported_type"].format(kind=kind), route)
         if route["type"] == "text/form" and not isinstance(item, dict):
             return _run_text(str(item), threshold)
@@ -147,7 +142,7 @@ def ballast_items(dataset: dict, copies: int = 40, bad_every: int = 7) -> list:
     items: list = []
     shipments = list(dataset["shipments"])
     for index, shipment in enumerate(shipments * max(1, copies)):
-        items.append(shipment)
+        items.append(copy.deepcopy(shipment))
         if bad_every > 0 and (index + 1) % bad_every == 0:
             items.append({"id": f"BALLAST-{index}", "input_type": "pdf", "title": "压舱未接入文件"})
     return items
@@ -186,12 +181,7 @@ def run_ballast(dataset: dict, copies: int = 40, workers: int = 4, bad_every: in
 
 def _run_text(text: str, threshold: float, shipment_id: str = "") -> dict:
     cleaned = preprocess_text(text)
-    parsed = extract_document(cleaned["text"]) if cleaned["text"].strip() else {
-        "shipment_id": shipment_id,
-        "station": "unknown",
-        "observations": {"gross_weight_kg": [], "container_no": [], "seal_no": []},
-        "countries": {},
-    }
+    parsed = extract_document(cleaned["text"]) if cleaned["text"].strip() else _blank_parse(shipment_id, "unknown")
     shipment = {
         "id": shipment_id or parsed.get("shipment_id") or "TEXT",
         "title": "",
@@ -204,7 +194,9 @@ def _run_text(text: str, threshold: float, shipment_id: str = "") -> dict:
     judged = judge_shipment(shipment, threshold)
     if cleaned["fallback"] == "missing" and judged["verdict"] == "send":
         judged = review_fallback(shipment, FALLBACK["missing"])
+    text_fallbacks = [] if cleaned["fallback"] == "none" else [{"document": "text", "fallback": cleaned["fallback"]}]
     explanation = _explain(judged)
+    explanation["text"] += " " + _intake_note("text/form", cleaned["dropped_noise"], text_fallbacks)
     return {
         "id": shipment["id"],
         "title": "",
@@ -214,7 +206,7 @@ def _run_text(text: str, threshold: float, shipment_id: str = "") -> dict:
             {
                 "stage": "preprocess",
                 "dropped_noise": cleaned["dropped_noise"],
-                "fallbacks": [] if cleaned["fallback"] == "none" else [{"document": "text", "fallback": cleaned["fallback"]}],
+                "fallbacks": text_fallbacks,
             },
             {"stage": "decide", "verdict": judged["verdict"], "blocks": len(judged["blocks"])},
         ],
@@ -244,6 +236,21 @@ def _fallback_result(item, message: str, route: dict | None = None) -> dict:
     }
 
 
+def _kind_label(item, route: dict) -> str:
+    if isinstance(item, dict):
+        return str(item.get("input_type") or item.get("file_type") or route["type"])
+    return route["type"]
+
+
+def _blank_parse(shipment_id: str, station: str) -> dict:
+    return {
+        "shipment_id": shipment_id,
+        "station": station,
+        "observations": {"gross_weight_kg": [], "container_no": [], "seal_no": []},
+        "countries": {},
+    }
+
+
 def _structure(shipment: dict, extracted: list[dict]) -> dict:
     merged = {
         "id": shipment["id"],
@@ -260,6 +267,14 @@ def _structure(shipment: dict, extracted: list[dict]) -> dict:
         for key, value in item["countries"].items():
             merged["countries"][key] = value
     return merged
+
+
+def _intake_note(rule: str, dropped: int, fallbacks: list[dict]) -> str:
+    note = f"调度规则 {rule}。预处理去掉 {dropped} 行噪声。"
+    if fallbacks:
+        detail = "、".join(f"{item['document']} {item['fallback']}" for item in fallbacks)
+        note += f"回退 {detail}。"
+    return note + "结论只来自规则。"
 
 
 def _explain(judged: dict) -> dict:

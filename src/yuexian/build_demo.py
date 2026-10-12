@@ -114,6 +114,7 @@ def _page(payload: dict, flows: dict, states: dict[str, dict]) -> str:
   .banner {{ background: #b42318; color: #fff; padding: 14px 16px; font-size: 28px; font-weight: 700; }}
   .banner.ok {{ background: #1f6b4a; }}
   .banner.review {{ background: #a15c00; }}
+  .reason {{ margin: 12px 0 0; padding: 10px 12px; background: #f6f3ee; border-left: 4px solid #1b3a4b; }}
   .docs {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }}
   .paper {{ border: 1px solid #1b3a4b; background: #fffdf8; padding: 14px 16px; font-family: "SimSun", "Microsoft YaHei", serif; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }}
   .paper h3 {{ margin: 0 0 8px; font-size: 16px; text-align: center; }}
@@ -200,9 +201,15 @@ function render(item, key = "") {{
   const blHit = weight ? String(weight.bl_kg) : "";
   const bannerClass = judged.verdict === "send" ? "ok" : (judged.verdict === "review" ? "review" : "");
   const steps = (state.trace || []).map(step => step.stage).join(" → ");
+  const prep = (state.trace || []).find(step => step.stage === "preprocess") || {{ dropped_noise: 0, fallbacks: [] }};
+  const dispatch = (state.trace || []).find(step => step.stage === "dispatch");
+  const route = dispatch ? `${{dispatch.rule}} → ${{dispatch.handler}}` : "text/form";
+  const backs = (prep.fallbacks || []).map(item => `${{item.document}} ${{item.fallback}}`).join("、");
   let body = `<div class="banner ${{bannerClass}}">${{judged.headline}}</div>`;
+  body += `<p class="reason">${{state.explanation}}</p>`;
   body += `<p>${{item.id}} · ${{item.title}}</p>`;
   body += `<p class="sub">数据流：${{steps}}</p>`;
+  body += `<p class="sub">调度 ${{route}}。预处理去掉 ${{prep.dropped_noise}} 行噪声。${{backs ? "回退 " + backs + "。" : ""}}结论只来自规则。</p>`;
   body += `<div class="docs">${{paper("装箱单", state.documents.packing, packingHit)}}${{paper("提单", state.documents.bl, blHit)}}</div>`;
   const extras = ["booking", "manifest", "declaration"].filter(name => state.documents[name]);
   if (extras.length) {{
@@ -211,10 +218,6 @@ function render(item, key = "") {{
   body += evidence(state, judged);
   if (state.applied.length) {{
     body += `<div class="resolved"><strong>已完成的整改：</strong>${{state.applied.join("；")}}。系统已按整改后的副本重新判定。</div>`;
-  }}
-  body += `<p>${{state.explanation}}</p>`;
-  for (const issue of judged.pending || []) {{
-    body += `<p>待核验：${{issue.message}}</p>`;
   }}
   if (judged.verdict === "hold" && state.choices.length) {{
     body += `<h2>确认依据并复检</h2><p>选择一份单据作为本次整改依据。原始样例不会被改写。</p>`;
