@@ -88,9 +88,14 @@ def _country_lines(shipment: dict) -> list[str]:
             f"启运国：{countries.get('departure', '')}",
             f"最终目的国：{countries.get('destination', '')}",
         ]
-    return [
-        f"贸易国：{countries.get('trade', '')}",
-        f"启运国：{countries.get('departure', '')}",
-        f"原产国：{countries.get('origin', '')}",
-        f"最终目的国：{countries.get('destination', '')}",
-    ]
+    lines = []
+    for key, title in (
+        ("trade", "贸易国"),
+        ("departure", "启运国"),
+        ("origin", "原产国"),
+        ("destination", "最终目的国"),
+    ):
+        value = countries.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"{title}：{value}")
+    return lines

@@ -20,6 +20,7 @@ class SubmissionTests(unittest.TestCase):
         "birth_station_total",
         "country_mix_count",
         "weight_hold_count",
+        "review_count",
     )
 
     def _demo_data(self) -> dict:

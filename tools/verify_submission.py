@@ -32,6 +32,7 @@ CHECKED = (
     "birth_station_total",
     "country_mix_count",
     "weight_hold_count",
+    "review_count",
 )
 
 

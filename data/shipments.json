@@ -162,6 +162,29 @@
         "destination": "德国",
         "collapsed_value": null
       }
+    },
+    {
+      "id": "SH-2026-070",
+      "title": "青岛—釜山 化工原料（资料不全）",
+      "demo": false,
+      "gross_weight_kg": [
+        {"station": "booking", "value": 8800, "label": "rewrite"},
+        {"station": "packing", "value": 8800, "label": "rewrite"},
+        {"station": "bl", "value": 8800, "label": "rewrite"}
+      ],
+      "container_no": [
+        {"station": "bl", "value": "OOLU7777000", "label": "rewrite"},
+        {"station": "manifest", "value": "OOLU7777000", "label": "rewrite"}
+      ],
+      "seal_no": [
+        {"station": "bl", "value": "SL700007", "label": "rewrite"}
+      ],
+      "countries": {
+        "trade": "中国",
+        "departure": "中国",
+        "origin": "中国",
+        "collapsed_value": null
+      }
     }
   ]
 }
