@@ -50,12 +50,24 @@ class RuleTests(unittest.TestCase):
         self.assertTrue(country_mixed(self.by_id["SH-2026-040"]["countries"]))
         self.assertFalse(country_mixed(self.by_id["SH-2026-052"]["countries"]))
 
+    def test_incomplete_shipment_is_review_not_send(self):
+        judged = judge_shipment(self.by_id["SH-2026-070"], 0.03)
+        self.assertEqual(judged["verdict"], "review")
+        self.assertEqual(judged["headline"], "资料待核验")
+        self.assertEqual(judged["blocks"], [])
+        fields = {item["field"] for item in judged["pending"]}
+        self.assertIn("seal_no", fields)
+        self.assertIn("destination", fields)
+
     def test_score_matches_review_numbers(self):
         result = score(self.dataset)
         self.assertEqual(result["birth_station_hit"], 2)
         self.assertEqual(result["birth_station_total"], 3)
         self.assertEqual(result["country_mix_count"], 2)
         self.assertEqual(result["weight_hold_count"], 2)
+        self.assertEqual(result["review_count"], 1)
+        self.assertEqual(result["hold_count"], 4)
+        self.assertEqual(result["send_count"], 2)
 
     def test_timeline_marks_the_first_weight_change(self):
         timeline = field_timeline(self.by_id["SH-2026-014"], "gross_weight_kg")

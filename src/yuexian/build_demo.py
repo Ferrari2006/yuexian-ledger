@@ -127,10 +127,18 @@ def _page(payload: dict, flows: dict, states: dict[str, dict]) -> str:
   .point span {{ color: #5c6b73; font-size: 12px; }}
   .choice {{ margin: 8px 8px 0 0; background: #1b3a4b; color: #fff; border: 0; padding: 9px 12px; font-size: 14px; cursor: pointer; }}
   .resolved {{ border: 1px solid #88b39d; background: #eef8f1; padding: 10px 12px; margin-top: 14px; }}
-  .stats {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 28px 20px; }}
+  .pending {{ border: 1px solid #d9a066; background: #fff8ef; padding: 10px 12px; margin-top: 14px; }}
+  .pending ul {{ list-style: disc; padding-left: 20px; margin: 8px 0 0; }}
+  .pending li {{ background: transparent; border: 0; padding: 2px 0; margin: 0; cursor: default; }}
+  .choice.reset {{ background: #5c6b73; }}
+  .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0 28px 20px; }}
   .stat {{ background: #fff; border: 1px solid #d9d3cb; padding: 14px; }}
   .stat strong {{ display: block; font-size: 26px; color: #1b3a4b; }}
   footer {{ padding: 0 28px 24px; color: #5c6b73; }}
+  @media (max-width: 900px) {{
+    main {{ grid-template-columns: 1fr; }}
+    .stats {{ grid-template-columns: 1fr 1fr; }}
+  }}
 </style>
 </head>
 <body>
@@ -216,12 +224,18 @@ function render(item, key = "") {{
     body += `<details><summary>查看历史与舱单依据</summary>${{extras.map(name => paper(STATION[name], state.documents[name], "")).join("")}}</details>`;
   }}
   body += evidence(state, judged);
+  if ((judged.pending || []).length) {{
+    body += `<div class="pending"><strong>待核验清单</strong><ul>${{(judged.pending || []).map(issue => `<li>${{escapeHtml(issue.message)}}</li>`).join("")}}</ul></div>`;
+  }}
   if (state.applied.length) {{
     body += `<div class="resolved"><strong>已完成的整改：</strong>${{state.applied.join("；")}}。系统已按整改后的副本重新判定。</div>`;
+    body += `<button class="choice reset" type="button" data-reset="1">回到原始样例</button>`;
   }}
   if (judged.verdict === "hold" && state.choices.length) {{
     body += `<h2>确认依据并复检</h2><p>选择一份单据作为本次整改依据。原始样例不会被改写。</p>`;
     body += state.choices.map(choice => `<button class="choice" data-token="${{choice.token}}">${{choice.label}}</button>`).join("");
+  }} else if (judged.verdict === "review") {{
+    body += `<div class="pending"><strong>不能申报。</strong>先补齐待核验字段。当前没有冲突，但资料不全，不能当作可以申报。</div>`;
   }} else if (judged.verdict === "send") {{
     body += `<div class="resolved"><strong>复检通过。</strong>当前三单的已覆盖字段不再触发阻塞规则，可以进入申报准备。</div>`;
   }}
@@ -233,6 +247,8 @@ function render(item, key = "") {{
       render(item, tokens.sort().join("|"));
     }};
   }});
+  const reset = panel.querySelector("button[data-reset]");
+  if (reset) reset.onclick = () => render(item, "");
   document.querySelectorAll("#list li").forEach(li => li.classList.toggle("active", li.dataset.id === currentId));
 }}
 
@@ -241,7 +257,7 @@ DATA.shipments.forEach(item => {{
   li.className = item.verdict === "send" ? "" : item.verdict;
   li.dataset.id = item.id;
   li.textContent = `${{item.headline}} · ${{item.id}}`;
-  li.onclick = () => render(item);
+  li.onclick = () => render(item, "");
   list.appendChild(li);
 }});
 const demo = DATA.shipments.find(item => item.demo) || DATA.shipments[0];
@@ -250,7 +266,8 @@ const ratio = Math.round(DATA.birth_station_ratio * 100);
 document.getElementById("stats").innerHTML = `
   <div class="stat"><strong>${{DATA.birth_station_hit}}/${{DATA.birth_station_total}}</strong>站点改写落在装箱或舱单（${{ratio}}%）</div>
   <div class="stat"><strong>${{DATA.country_mix_count}}</strong>四国口径混填判错的票数</div>
-  <div class="stat"><strong>${{DATA.weight_hold_count}}</strong>毛重越过约 3% 的票数</div>`;
+  <div class="stat"><strong>${{DATA.weight_hold_count}}</strong>毛重越过约 3% 的票数</div>
+  <div class="stat"><strong>${{DATA.review_count}}</strong>资料待核验票数</div>`;
 document.getElementById("foot").textContent = DATA.threshold_note;
 </script>
 </body>

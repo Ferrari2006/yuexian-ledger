@@ -250,6 +250,9 @@ def score(dataset: dict) -> dict:
         if any(block["kind"] == "gross_weight" for block in item["blocks"])
     )
     ratio = (birth_hit / len(rewrite_births)) if rewrite_births else 0
+    review_count = sum(1 for item in judged if item["verdict"] == "review")
+    hold_count = sum(1 for item in judged if item["verdict"] == "hold")
+    send_count = sum(1 for item in judged if item["verdict"] == "send")
     return {
         "shipments": judged,
         "birth_station_ratio": round(ratio, 4),
@@ -257,5 +260,8 @@ def score(dataset: dict) -> dict:
         "birth_station_total": len(rewrite_births),
         "country_mix_count": country_errors,
         "weight_hold_count": weight_holds,
+        "review_count": review_count,
+        "hold_count": hold_count,
+        "send_count": send_count,
         "threshold_note": dataset["threshold_note"],
     }
