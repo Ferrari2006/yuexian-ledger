@@ -17,6 +17,7 @@ UNSUPPORTED = frozenset(
 )
 
 RULES = (
+    {"type": "text/documents", "handler": "run_documents"},
     {"type": "text/form", "handler": "extract_document"},
     {"type": "json/shipment", "handler": "structure_record"},
     {"type": "unsupported", "handler": "review_fallback"},
@@ -40,6 +41,8 @@ def classify(item) -> str:
         return "text/form"
     if kind in UNSUPPORTED:
         return "unsupported"
+    if "documents" in item:
+        return "text/documents"
     if "text" in item and "gross_weight_kg" not in item:
         return "text/form"
     if "gross_weight_kg" in item or ("id" in item and "countries" in item):

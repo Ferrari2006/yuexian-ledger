@@ -114,6 +114,10 @@ def run_input(item, threshold: float, use_qwen: bool = False) -> dict:
     """按类型调度。未接入类型和不合规输入回退为待核验，不抛给调用方。"""
     try:
         route = rule_for(item)
+        if route["type"] == "text/documents":
+            # 延迟导入：intake复用本模块结构与解释函数。
+            from yuexian.intake import run_documents
+            return run_documents(item,threshold)
         if route["handler"] == "review_fallback":
             kind = _kind_label(item, route)
             return _fallback_result(item, FALLBACK["unsupported_type"].format(kind=kind), route)

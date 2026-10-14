@@ -28,6 +28,8 @@ python -m yuexian.build_demo
 
 多票复跑：`python -m yuexian batch --repeat 20`。压舱并核对回退：`python -m yuexian ballast --repeat 40`。
 
+本地文本单证包检查：`python -m yuexian check --input data/text_bundles/hold.json --output report.json`。可提供自己的装箱单、提单和舱单标签文本；输出保留字段原文与行号，并检查混票、重复字段与跨单证国家冲突。格式、范围和验证记录见[文本单证接入与证据记录](docs/文本单证接入与证据记录.md)。
+
 赛题一的[平台运营方案](docs/赛题一-运营方案.md)覆盖 STP、4P、图文获客与社群承接、用户激活与持续使用、统一实测执行和数据复盘，与检查台分开提交；配套[执行材料与记录模板](docs/赛题一-运营执行材料.md)。目前方案和模板已准备，渠道合作、平台能力核验及实测结果仍待落实。文档提交步骤见[GitHub提交操作说明](docs/GitHub提交操作说明.md)。
 
 数据流见 `docs/数据流.md`，判定见 `docs/算法.md`，扩展见 `docs/扩展.md`，提交见 `docs/提交清单.md`。

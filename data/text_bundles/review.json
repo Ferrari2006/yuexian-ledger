@@ -1,0 +1,26 @@
+{
+  "id": "SH-2026-070",
+  "title": "青岛—釜山 化工原料（资料不全）",
+  "documents": [
+    {
+      "name": "packing.txt",
+      "station": "packing",
+      "text": "装箱单 PACKING LIST\n合成样例，非正式海关单证。\n单证站点：packing\n票号：SH-2026-070\n货名：青岛—釜山 化工原料（资料不全）\n毛重（公斤）：8800\n贸易国：中国\n启运国：中国\n原产国：中国\n"
+    },
+    {
+      "name": "bl.txt",
+      "station": "bl",
+      "text": "提单 BILL OF LADING\n合成样例，非正式海关单证。\n单证站点：bl\n票号：SH-2026-070\n货名：青岛—釜山 化工原料（资料不全）\n毛重（公斤）：8800\n柜号：OOLU7777000\n封条号：SL700007\n贸易国：中国\n启运国：中国\n原产国：中国\n"
+    },
+    {
+      "name": "manifest.txt",
+      "station": "manifest",
+      "text": "舱单 MANIFEST\n合成样例，非正式海关单证。\n单证站点：manifest\n票号：SH-2026-070\n货名：青岛—釜山 化工原料（资料不全）\n柜号：OOLU7777000\n贸易国：中国\n启运国：中国\n原产国：中国\n"
+    },
+    {
+      "name": "booking.txt",
+      "station": "booking",
+      "text": "订舱记录 BOOKING\n合成样例，非正式海关单证。\n单证站点：booking\n票号：SH-2026-070\n货名：青岛—釜山 化工原料（资料不全）\n毛重（公斤）：8800\n贸易国：中国\n启运国：中国\n原产国：中国\n"
+    }
+  ]
+}
