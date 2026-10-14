@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import math
 from pathlib import Path
 
 from yuexian.weights import parse_weight
@@ -158,12 +159,19 @@ def judge_shipment(shipment: dict, threshold: float) -> dict:
             pending.append({"field": "gross_weight_kg", "station": station,
                             "message": f"{title}毛重缺失或不是有效的正数公斤值，请核验原文"})
     gap = weight_gap(packing, bl)
+    threshold_ok = (
+        not isinstance(threshold, bool) and isinstance(threshold, (int, float))
+        and 0 <= threshold < 1 and math.isfinite(threshold)
+    )
+    if not threshold_ok:
+        pending.append({"field": "threshold", "station": "rules",
+                        "message": "毛重偏差阈值无效，须为0到1之间的有限数值，请核验规则配置"})
     normalized_weight_obs = [
         {**item, "value": parse_weight(item.get("value"))}
         for item in weight_obs
     ]
     weight_birth = birth_station(normalized_weight_obs)
-    if gap is not None and gap > threshold:
+    if threshold_ok and gap is not None and gap > threshold:
         blocks.append(
             {
                 "kind": "gross_weight",
@@ -172,7 +180,7 @@ def judge_shipment(shipment: dict, threshold: float) -> dict:
                 "bl_kg": bl,
                 "gap": round(gap, 4),
                 "action": "改提单毛重，或改装箱单后再发",
-                "if_send": "毛重偏差超过约 3%，自动比对可能退单",
+                "if_send": f"毛重偏差超过当前阈值 {threshold:.1%}，自动比对可能退单",
             }
         )
 
